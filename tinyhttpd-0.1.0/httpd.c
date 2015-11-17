@@ -4,6 +4,7 @@
  * CSE 4344 (Network concepts), Prof. Zeigler
  * University of Texas at Arlington
  */
+
 /* This program compiles for Sparc Solaris 2.6.
  * To compile for Linux:
  *  1) Comment out the #include <pthread.h> line.
@@ -12,6 +13,7 @@
  *  4) Uncomment the line that runs accept_request().
  *  5) Remove -lsocket from the Makefile.
  */
+
 #include <stdio.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -22,10 +24,10 @@
 #include <strings.h>
 #include <string.h>
 #include <sys/stat.h>
-//#include <pthread.h>
+//#include <pthread.h> //Comment out the #include <pthread.h> line.
 #include <sys/wait.h>
 #include <stdlib.h>
-
+#include <time.h>
 #define ISspace(x) isspace((int)(x))
 
 #define SERVER_STRING "Server: jdbhttpd/0.1.0\r\n"
@@ -37,126 +39,163 @@ void cannot_execute(int);
 void error_die(const char *);
 void execute_cgi(int, const char *, const char *, const char *);
 int  get_line(int, char *, int);
-void headers(int, const char *);
+void headers(int, const char *); /** header ´¦Àíº¯Êı */
 void not_found(int);
 void serve_file(int, const char *);
 int  startup(u_short *);
 void unimplemented(int);
+void options(int);/** options ´¦Àíº¯Êı */
 
 /**********************************************************************/
 /* A request has caused a call to accept() on the server port to
  * return.  Process the request appropriately.
  * Parameters: the socket connected to the client */
- // å¤„ç†è¯·æ±‚
+// ´¦ÀíÇëÇó
 /**********************************************************************/
 void accept_request(int client)
 {
-    char buf[1024];
-    int numchars;
-    char method[255];
-    char url[255];
-    char path[512];
-    size_t i, j;
-    struct stat st;
-    int cgi = 0;      /* becomes true if server decides this is a CGI
+	char buf[1024];
+	int numchars;
+	char method[255];
+	char url[255];
+	char path[512];
+	size_t i, j;
+	struct stat st;
+	int cgi = 0;      /* becomes true if server decides this is a CGI
                        * program */
-    char *query_string = NULL;
+	char *query_string = NULL;
 
-    // è·å–è¯·æ±‚æŠ¥æ–‡çš„ç¬¬ä¸€è¡Œï¼Œå³ä¸ºè¯·æ±‚è¡Œ
-    numchars = get_line(client, buf, sizeof(buf));
-    i = 0;
-    j = 0;
-    // è·å–ç¬¬ä¸€ä¸ªå•è¯ å³ä¸ºmethodï¼Œå¸¸è§çš„methodæœ‰GETï¼ŒPOSTï¼ŒHEADç­‰
-    while (!ISspace(buf[j]) && (i < sizeof(method) - 1)) {
-        method[i] = buf[j];
-        i++;
-        j++;
-    }
-    method[i] = '\0';
+	int head = 0;/** head ÇëÇó */
+	int option  = 0; /** options ÇëÇó */
 
-    // åªèƒ½å¤„ç†GETå’ŒPOST methodï¼Œå¦åˆ™é€šçŸ¥å®¢æˆ·ç«¯è¯·æ±‚çš„æ“ä½œéæ³•
-    if (strcasecmp(method, "GET") && strcasecmp(method, "POST")) {
-        unimplemented(client);
-        return;
-    }
-    if (strcasecmp(method, "POST") == 0)
-        cgi = 1;
+//      »ñÈ¡ÇëÇó±¨ÎÄµÄµÚÒ»ĞĞ£¬¼´ÎªÇëÇóĞĞ
+	numchars = get_line(client, buf, sizeof(buf));
+	i = 0;
+	j = 0;
+//      »ñÈ¡µÚÒ»¸öµ¥´Ê ¼´Îªmethod£¬³£¼ûµÄmethodÓĞGET£¬POST£¬HEADµÈ
+	while (!ISspace(buf[j]) && (i < sizeof(method) - 1))
+	{
+		method[i] = buf[j];
+		i++;
+		j++;
+	}
+	method[i] = '\0';
 
-    // è·å–url
-    i = 0;
-    while (ISspace(buf[j]) && (j < sizeof(buf)))
-        j++;
-    while (!ISspace(buf[j]) && (i < sizeof(url) - 1) && (j < sizeof(buf))) {
-        url[i] = buf[j];
-        i++;
-        j++;
-    }
-    url[i] = '\0';
+	/*      ÏÔÊ¾½ÓÊÜµÄÊı¾İ
+	        printf("\n\033[32m=======\033[32m%s=======\033[0m\n", method);
+	*/
+	/** ÊµÏÖGET,POST,HEAD,OPTIONS */
+	if (strcasecmp(method, "GET") && strcasecmp(method, "POST")
+	        && strcasecmp(method, "HEAD")&&  strcasecmp(method, "OPTIONS"))
+	{
+		unimplemented(client);
+		return;
+	}
+	if (strcasecmp(method, "POST") == 0)
+	{
+		cgi = 1;
+	}
+	if (strcasecmp(method, "HEAD") == 0)
+	{
+		head = 1;
+	}
+	if (strcasecmp(method, "OPTIONS") == 0)
+	{
+		option = 1;
+	}
 
-    // GETè¯·æ±‚ï¼Œå¦‚æœæœ‰é—®å·ï¼Œåˆ™å°†query_stringæŒ‡å‘'?'åçš„å†…å®¹
-    // æ²¡æœ‰é—®å·ï¼Œåˆ™query_stringä¸ºNULL
-    if (strcasecmp(method, "GET") == 0) {
-        query_string = url;
-        while ((*query_string != '?') && (*query_string != '\0'))
-            query_string++;
-        // æœ‰é—®å·ï¼Œåˆ™ä¸ºåŠ¨æ€è¯·æ±‚
-        if (*query_string == '?') {
-            cgi = 1;
-            *query_string = '\0';
-            query_string++;
-        }
-    }
+	// »ñÈ¡url
+	i = 0;
+	while (ISspace(buf[j]) && (j < sizeof(buf)))
+		j++;
+	while (!ISspace(buf[j]) && (i < sizeof(url) - 1) && (j < sizeof(buf)))
+	{
+		url[i] = buf[j];
+		i++;
+		j++;
+	}
+	url[i] = '\0';
 
-    sprintf(path, "htdocs%s", url); // å†…å®¹å­˜å‚¨åœ¨htdocsç›®å½•ä¸‹
-    if (path[strlen(path) - 1] == '/') // '/'ä»£è¡¨é»˜è®¤çš„home page
-        strcat(path, "index.html");
-    
-    // å¦‚æœstatè¿”å›é”™è¯¯ï¼Œå›å¤å®¢æˆ·ç«¯not_found
-    if (stat(path, &st) == -1) {
-        // è¯»å–å¹¶ä¸¢å¼ƒ headersï¼Œç¬¬ä¸€è¡Œè¯·æ±‚è¡Œä¹‹åä¾¿æ˜¯è¯·æ±‚å¤´éƒ¨
-        while ((numchars > 0) && strcmp("\n", buf))
-            numchars = get_line(client, buf, sizeof(buf));
-        not_found(client);
-    } else {
-        // å¦‚æœæ˜¯ç›®å½•ï¼Œè¯·æ±‚å…¶é»˜è®¤çš„home page
-        if ((st.st_mode & S_IFMT) == S_IFDIR)
-            strcat(path, "/index.html");
-        // å¦‚æœowner group otherä»»ä½•ä¸€ä¸ªæœ‰æ‰§è¡Œæƒé™
-        if ((st.st_mode & S_IXUSR) ||
-            (st.st_mode & S_IXGRP) ||
-            (st.st_mode & S_IXOTH) )
-        {
-            cgi = 1;
-        }
-        
-        if (!cgi) 
-            serve_file(client, path); // é™æ€è¯·æ±‚ï¼Œç›´æ¥ä»ç¡¬ç›˜è¯»å–æ–‡ä»¶å‘é€å‡ºå»
-        else
-            execute_cgi(client, path, method, query_string); // åŠ¨æ€è¯·æ±‚ï¼Œæ‰§è¡Œcgiè„šæœ¬
-    }
+	// GETÇëÇó£¬Èç¹ûÓĞÎÊºÅ£¬Ôò½«query_stringÖ¸Ïò'?'ºóµÄÄÚÈİ
+	// Ã»ÓĞÎÊºÅ£¬Ôòquery_stringÎªNULL
+	if (strcasecmp(method, "GET") == 0)
+	{
+		query_string = url;
+		while ((*query_string != '?') && (*query_string != '\0'))
+			query_string++;
+		// ÓĞÎÊºÅ£¬ÔòÎª¶¯Ì¬ÇëÇó
+		if (*query_string == '?')
+		{
+			cgi = 1;
+			*query_string = '\0';
+			query_string++;
+		}
+	}
 
-    close(client);
+	sprintf(path, "htdocs%s", url); // ÄÚÈİ´æ´¢ÔÚhtdocsÄ¿Â¼ÏÂ
+	if (path[strlen(path) - 1] == '/') // '/'´ú±íÄ¬ÈÏµÄhome page
+		strcat(path, "index.html");
+
+//      Èç¹ûstat·µ»Ø´íÎó£¬»Ø¸´¿Í»§¶Ënot_found
+	if (stat(path, &st) == -1)
+	{
+		// ¶ÁÈ¡²¢¶ªÆú headers£¬µÚÒ»ĞĞÇëÇóĞĞÖ®ºó±ãÊÇÇëÇóÍ·²¿
+		while ((numchars > 0) && strcmp("\n", buf))
+			numchars = get_line(client, buf, sizeof(buf));
+		not_found(client);
+	}
+	else
+	{
+		// Èç¹ûÊÇÄ¿Â¼£¬ÇëÇóÆäÄ¬ÈÏµÄhome page
+		if ((st.st_mode & S_IFMT) == S_IFDIR)
+			strcat(path, "/index.html");
+		// Èç¹ûowner group otherÈÎºÎÒ»¸öÓĞÖ´ĞĞÈ¨ÏŞ
+		if ((st.st_mode & S_IXUSR) ||
+		        (st.st_mode & S_IXGRP) ||
+		        (st.st_mode & S_IXOTH) )
+		{
+			cgi = 1;
+		}
+		if (!cgi && !head && !option)
+		{
+			serve_file(client, path); // ¾²Ì¬ÇëÇó£¬Ö±½Ó´ÓÓ²ÅÌ¶ÁÈ¡ÎÄ¼ş·¢ËÍ³öÈ¥
+		}
+		if (cgi && !head  && !option)
+		{
+			execute_cgi(client, path, method, query_string); // ¶¯Ì¬ÇëÇó£¬Ö´ĞĞcgi½Å±¾
+		}
+		if (head)
+		{
+			headers(client, path);
+		}
+		if (option)
+		{
+			options(client);
+		}
+	}
+
+	close(client);
 }
 
 /**********************************************************************/
 /* Inform the client that a request it has made has a problem.
  * Parameters: client socket */
- // é€šçŸ¥ client æ˜¯ä¸ªé”™è¯¯çš„è¯·æ±‚
+// Í¨Öª client ÊÇ¸ö´íÎóµÄÇëÇó
 /**********************************************************************/
 void bad_request(int client)
 {
-    char buf[1024];
+	char buf[1024];
 
-    sprintf(buf, "HTTP/1.0 400 BAD REQUEST\r\n");
-    send(client, buf, sizeof(buf), 0);
-    sprintf(buf, "Content-type: text/html\r\n");
-    send(client, buf, sizeof(buf), 0);
-    sprintf(buf, "\r\n");
-    send(client, buf, sizeof(buf), 0);
-    sprintf(buf, "<P>Your browser sent a bad request, ");
-    send(client, buf, sizeof(buf), 0);
-    sprintf(buf, "such as a POST without a Content-Length.\r\n");
-    send(client, buf, sizeof(buf), 0);
+	sprintf(buf, "HTTP/1.0 400 BAD REQUEST\r\n");
+	send(client, buf, sizeof(buf), 0);
+	sprintf(buf, "Content-type: text/html\r\n");
+	send(client, buf, sizeof(buf), 0);
+	sprintf(buf, "\r\n");
+	send(client, buf, sizeof(buf), 0);
+	sprintf(buf, "<P>Your browser sent a bad request, ");
+	send(client, buf, sizeof(buf), 0);
+	sprintf(buf, "such as a POST without a Content-Length.\r\n");
+	send(client, buf, sizeof(buf), 0);
 }
 
 /**********************************************************************/
@@ -165,48 +204,49 @@ void bad_request(int client)
  * easier just to do something like pipe, fork, and exec("cat").
  * Parameters: the client socket descriptor
  *             FILE pointer for the file to cat */
- // å°†æ–‡ä»¶çš„æ•´ä¸ªå†…å®¹å‘é€åˆ°ä¸€ä¸ªsocketä¸Š ï¼ˆé™æ€è¯·æ±‚ï¼‰
+// ½«ÎÄ¼şµÄÕû¸öÄÚÈİ·¢ËÍµ½Ò»¸ösocketÉÏ £¨¾²Ì¬ÇëÇó£©
 /**********************************************************************/
 void cat(int client, FILE *resource)
 {
-    char buf[1024];
+	char buf[1024];
+	fgets(buf, sizeof(buf), resource);
+	while (!feof(resource))
+	{
+		send(client, buf, strlen(buf), 0);
+		fgets(buf, sizeof(buf), resource);
+	}
 
-    fgets(buf, sizeof(buf), resource);
-    while (!feof(resource)) {
-        send(client, buf, strlen(buf), 0);
-        fgets(buf, sizeof(buf), resource);
-    }
 }
 
 /**********************************************************************/
 /* Inform the client that a CGI script could not be executed.
  * Parameter: the client socket descriptor. */
- // é€šçŸ¥ client , CGIè„šæœ¬æ— æ³•è¿è¡Œ
+// Í¨Öª client , CGI½Å±¾ÎŞ·¨ÔËĞĞ
 /**********************************************************************/
 void cannot_execute(int client)
 {
-    char buf[1024];
+	char buf[1024];
 
-    sprintf(buf, "HTTP/1.0 500 Internal Server Error\r\n");
-    send(client, buf, strlen(buf), 0);
-    sprintf(buf, "Content-type: text/html\r\n");
-    send(client, buf, strlen(buf), 0);
-    sprintf(buf, "\r\n");
-    send(client, buf, strlen(buf), 0);
-    sprintf(buf, "<P>Error prohibited CGI execution.\r\n");
-    send(client, buf, strlen(buf), 0);
+	sprintf(buf, "HTTP/1.0 500 Internal Server Error\r\n");
+	send(client, buf, strlen(buf), 0);
+	sprintf(buf, "Content-type: text/html\r\n");
+	send(client, buf, strlen(buf), 0);
+	sprintf(buf, "\r\n");
+	send(client, buf, strlen(buf), 0);
+	sprintf(buf, "<P>Error prohibited CGI execution.\r\n");
+	send(client, buf, strlen(buf), 0);
 }
 
 /**********************************************************************/
 /* Print out an error message with perror() (for system errors; based
  * on value of errno, which indicates system call errors) and exit the
  * program indicating an error. */
- // æ‰“å°ä¸€æ¡é”™è¯¯ä¿¡æ¯ï¼Œå¹¶é€€å‡ºè¯¥ç¨‹åº
+// ´òÓ¡Ò»Ìõ´íÎóĞÅÏ¢£¬²¢ÍË³ö¸Ã³ÌĞò
 /**********************************************************************/
 void error_die(const char *sc)
 {
-    perror(sc);
-    exit(1);
+	perror(sc);
+	exit(1);
 }
 
 /**********************************************************************/
@@ -214,120 +254,133 @@ void error_die(const char *sc)
  * appropriate.
  * Parameters: client socket descriptor
  *             path to the CGI script */
- // è¿è¡Œä¸€ä¸ª CGI è„šæœ¬.  éœ€è¦è®¾ç½®ç¯å¢ƒå˜é‡
+// ÔËĞĞÒ»¸ö CGI ½Å±¾.  ĞèÒªÉèÖÃ»·¾³±äÁ¿
 /**********************************************************************/
 void execute_cgi(int client, const char *path,
-        const char *method, const char *query_string)
+                 const char *method, const char *query_string)
 {
-    char buf[1024];
-    int cgi_output[2];
-    int cgi_input[2];
-    pid_t pid;
-    int status;
-    int i;
-    char c;
-    int numchars = 1;
-    int content_length = -1;
+	char buf[1024];
+	int cgi_output[2];
+	int cgi_input[2];
+	pid_t pid;
+	int status;
+	int i;
+	char c;
+	int numchars = 1;
+	int content_length = -1;
 
-    buf[0] = 'A';
-    buf[1] = '\0';
-    if (strcasecmp(method, "GET") == 0) {
-        // è¯»å–å¹¶ä¸¢å¼ƒ headers
-        while ((numchars > 0) && strcmp("\n", buf))  
-            numchars = get_line(client, buf, sizeof(buf));
-    } else { /* POST */
-        numchars = get_line(client, buf, sizeof(buf)); // è¯»å–headers
-        // ä¸€è¡Œè¡Œåœ°è¯»å–ï¼Œç›´åˆ°é‡åˆ°content_length
-        while ((numchars > 0) && strcmp("\n", buf)) {
-            buf[15] = '\0';
-            if (strcasecmp(buf, "Content-Length:") == 0)
-                content_length = atoi(&(buf[16]));
-            numchars = get_line(client, buf, sizeof(buf));
-        }
-        if (content_length == -1) {
-            bad_request(client);
-            return;
-        }
-    }
+	buf[0] = 'A';
+	buf[1] = '\0';
+	if (strcasecmp(method, "GET") == 0)
+	{
+		// ¶ÁÈ¡²¢¶ªÆú headers
+		while ((numchars > 0) && strcmp("\n", buf))
+			numchars = get_line(client, buf, sizeof(buf));
+	}
+	else     /* POST */
+	{
+		numchars = get_line(client, buf, sizeof(buf)); // ¶ÁÈ¡headers
+		// Ò»ĞĞĞĞµØ¶ÁÈ¡£¬Ö±µ½Óöµ½content_length
+		while ((numchars > 0) && strcmp("\n", buf))
+		{
+			buf[15] = '\0';
+			if (strcasecmp(buf, "Content-Length:") == 0)
+				content_length = atoi(&(buf[16]));
+			numchars = get_line(client, buf, sizeof(buf));
+		}
+		if (content_length == -1)
+		{
+			bad_request(client);
+			return;
+		}
+	}
+	sprintf(buf, "HTTP/1.0 200 OK\r\n");
+	send(client, buf, strlen(buf), 0);
 
-    sprintf(buf, "HTTP/1.0 200 OK\r\n");
-    send(client, buf, strlen(buf), 0);
-                                                                                           
-    // å…³é”®çš„éƒ¨åˆ†ï¼šçˆ¶è¿›ç¨‹å’Œå­è¿›ç¨‹é€šè¿‡ç®¡é“é€šä¿¡
-    // å­è¿›ç¨‹çˆ¶è¿›ç¨‹ç®¡é“æµå‘å›¾ Pè¡¨ç¤ºparent, Cè¡¨ç¤ºchild
-    /* 
-    send to brower                                            data
-        <<<----         ---------<--<--<-----------         -----<<<                                                           
-               \        |                         |        /                                  
-                \       |                         |       /                                    
-               (P)   fd 1 (C)                  fd 0 (C)  (P)
-                |       |                         |       |                         
-                ^       v                         ^       v
-                ^       v                         ^       v                      
-                |       |                         |       |                         
-    cgi_output [0]     [1]             cgi_input [0]     [1]
-                |       |                         |       |                                              
-                |---<---|                         |---<---|                                              
-                  pipe                              pipe
-    */
+	// ¹Ø¼üµÄ²¿·Ö£º¸¸½ø³ÌºÍ×Ó½ø³ÌÍ¨¹ı¹ÜµÀÍ¨ĞÅ
+	// ×Ó½ø³Ì¸¸½ø³Ì¹ÜµÀÁ÷ÏòÍ¼ P±íÊ¾parent, C±íÊ¾child
+	/*
+	send to brower                                            data
+	    <<<----         ---------<--<--<-----------         -----<<<
+	           \        |                         |        /
+	            \       |                         |       /
+	           (P)   fd 1 (C)                  fd 0 (C)  (P)
+	            |       |                         |       |
+	            ^       v                         ^       v
+	            ^       v                         ^       v
+	            |       |                         |       |
+	cgi_output [0]     [1]             cgi_input [0]     [1]
+	            |       |                         |       |
+	            |---<---|                         |---<---|
+	              pipe                              pipe
+	*/
+	// ½¨Á¢¹ÜµÀ
+	if (pipe(cgi_output) < 0)
+	{
+		cannot_execute(client);
+		return;
+	}
+	if (pipe(cgi_input) < 0)
+	{
+		cannot_execute(client);
+		return;
+	}
 
-    // å»ºç«‹ç®¡é“
-    if (pipe(cgi_output) < 0) {
-        cannot_execute(client);
-        return;
-    }
-    if (pipe(cgi_input) < 0) {
-        cannot_execute(client);
-        return;
-    }
+	if ( (pid = fork()) < 0 )
+	{
+		cannot_execute(client);
+		return;
+	}
 
-    if ( (pid = fork()) < 0 ) {
-        cannot_execute(client);
-        return;
-    }
-    
-    // å­è¿›ç¨‹ä¸­æ‰§è¡Œcgiè„šæœ¬ï¼Œcgiè„šæœ¬å°†ç›¸å…³å†…å®¹æ‰“å°åˆ°æ ‡å‡†è¾“å‡º
-    if (pid == 0) { /* å­è¿›ç¨‹ä¸­: CGI script */
-        char meth_env[255];
-        char query_env[255];
-        char length_env[255];
+	// ×Ó½ø³ÌÖĞÖ´ĞĞcgi½Å±¾£¬cgi½Å±¾½«Ïà¹ØÄÚÈİ´òÓ¡µ½±ê×¼Êä³ö
+	if (pid == 0)   /* ×Ó½ø³ÌÖĞ: CGI script */
+	{
+		char meth_env[255];
+		char query_env[255];
+		char length_env[255];
 
-        dup2(cgi_output[1], 1); // å°†cgi_outputçš„å†™å…¥ç«¯é‡å®šå‘åˆ°æ ‡å‡†è¾“å‡º
-        dup2(cgi_input[0], 0);  // å°†cgi_inputçš„å†™å…¥ç«¯é‡å®šå‘åˆ°æ ‡å‡†è¾“å…¥
-        close(cgi_output[0]); // åœ¨å­è¿›ç¨‹ä¸­å…³é—­cgi_outputçš„è¯»å–ç«¯
-        close(cgi_input[1]);  // åœ¨å­è¿›ç¨‹ä¸­å…³é—­cgi_inputçš„å†™å…¥ç«¯
-        sprintf(meth_env, "REQUEST_METHOD=%s", method);
-        putenv(meth_env);  
-        if (strcasecmp(method, "GET") == 0) {
-            // è®¾å®šquery_stringç¯å¢ƒå˜é‡
-            sprintf(query_env, "QUERY_STRING=%s", query_string);
-            putenv(query_env);
-        } else {   /* POST method */
-            // è®¾å®šquery_stringç¯å¢ƒå˜é‡
-            sprintf(length_env, "CONTENT_LENGTH=%d", content_length);
-            putenv(length_env);
-        }
-        execl(path, path, NULL); // æ‰§è¡Œcgiè„šæœ¬
-        exit(0);
-    } else {    /* in parent */ // çˆ¶è¿›ç¨‹å°†å¤„ç†åçš„è¯·æ±‚é€šè¿‡ç®¡é“å‘é€ç»™å­è¿›ç¨‹
-        close(cgi_output[1]); // åœ¨çˆ¶è¿›ç¨‹ä¸­å…³é—­cgi_outputçš„å†™å…¥ç«¯
-        close(cgi_input[0]);  // åœ¨çˆ¶è¿›ç¨‹ä¸­å…³é—­cgi_outputçš„å†™å…¥ç«¯
-        if (strcasecmp(method, "POST") == 0) {
-            for (i = 0; i < content_length; i++) {
-                // ä»å®¢æˆ·ç«¯è¯»å–ä¸€ä¸ªä¸ªå­—ç¬¦ï¼Œæœ€åé€šè¿‡ç®¡é“é‡å®šå‘åˆ°childçš„æ ‡å‡†è¾“å…¥
-                recv(client, &c, 1, 0);
-                write(cgi_input[1], &c, 1);
-            }
-        }
-        // å°†ä»ç®¡é“ä¸­è¯»å–çš„å†…å®¹å‘é€åˆ°client
-        while (read(cgi_output[0], &c, 1) > 0)
-            send(client, &c, 1, 0);
+		dup2(cgi_output[1], 1); // ½«cgi_outputµÄĞ´Èë¶ËÖØ¶¨Ïòµ½±ê×¼Êä³ö
+		dup2(cgi_input[0], 0);  // ½«cgi_inputµÄĞ´Èë¶ËÖØ¶¨Ïòµ½±ê×¼ÊäÈë
+		close(cgi_output[0]); // ÔÚ×Ó½ø³ÌÖĞ¹Ø±Õcgi_outputµÄ¶ÁÈ¡¶Ë
+		close(cgi_input[1]);  // ÔÚ×Ó½ø³ÌÖĞ¹Ø±Õcgi_inputµÄĞ´Èë¶Ë
+		sprintf(meth_env, "REQUEST_METHOD=%s", method);
+		putenv(meth_env);
+		if (strcasecmp(method, "GET") == 0)
+		{
+			// Éè¶¨query_string»·¾³±äÁ¿
+			sprintf(query_env, "QUERY_STRING=%s", query_string);
+			putenv(query_env);
+		}
+		else       /* POST method */
+		{
+			// Éè¶¨query_string»·¾³±äÁ¿
 
-        // å…³é—­ä¸¤ä¸ªç®¡é“çš„å¦å¤–ä¸€ç«¯
-        close(cgi_output[0]);
-        close(cgi_input[1]);
-        waitpid(pid, &status, 0);
-    }
+			sprintf(length_env, "CONTENT_LENGTH=%d", content_length);
+			putenv(length_env);
+		}
+		execl(path, path, NULL); // Ö´ĞĞcgi½Å±¾
+		exit(0);
+	}
+	else {    /* in parent */   // ¸¸½ø³Ì½«´¦ÀíºóµÄÇëÇóÍ¨¹ı¹ÜµÀ·¢ËÍ¸ø×Ó½ø³Ì
+		close(cgi_output[1]); // ÔÚ¸¸½ø³ÌÖĞ¹Ø±Õcgi_outputµÄĞ´Èë¶Ë
+		close(cgi_input[0]);  // ÔÚ¸¸½ø³ÌÖĞ¹Ø±Õcgi_outputµÄĞ´Èë¶Ë
+		if (strcasecmp(method, "POST") == 0)
+		{
+			for (i = 0; i < content_length; i++)
+			{
+				// ´Ó¿Í»§¶Ë¶ÁÈ¡Ò»¸ö¸ö×Ö·û£¬×îºóÍ¨¹ı¹ÜµÀÖØ¶¨Ïòµ½childµÄ±ê×¼ÊäÈë
+				recv(client, &c, 1, 0);
+				write(cgi_input[1], &c, 1);
+			}
+		}
+		// ½«´Ó¹ÜµÀÖĞ¶ÁÈ¡µÄÄÚÈİ·¢ËÍµ½client
+		while (read(cgi_output[0], &c, 1) > 0)
+			send(client, &c, 1, 0);
+		// ¹Ø±ÕÁ½¸ö¹ÜµÀµÄÁíÍâÒ»¶Ë
+		close(cgi_output[0]);
+		close(cgi_input[1]);
+		waitpid(pid, &status, 0);
+	}
 }
 
 /**********************************************************************/
@@ -342,89 +395,166 @@ void execute_cgi(int client, const char *path,
  *             the buffer to save the data in
  *             the size of the buffer
  * Returns: the number of bytes stored (excluding null) */
- /* ä»socketä¸­è¯»å–ä¸€è¡Œå†…å®¹ï¼Œæ¢è¡Œç¬¦å¯ä»¥ä¸º'\r', '\n'æˆ–'\r\n'. å¦‚æœè¯»å–åˆ°ä¸Šè¿°ä¸‰
- * ä¸ªä¹‹ä¸€ï¼Œç»Ÿä¸€è®¾å®šä¸º'\n'ï¼Œæœ€åç”¨nullå­—ç¬¦ç»“å°¾. å¦‚æœæ²¡æœ‰æ£€æµ‹åˆ°æ¢è¡Œç¬¦ï¼Œ
- * å­—ç¬¦ä¸²ä»¥nullç»“å°¾
- */
+/* ´ÓsocketÖĞ¶ÁÈ¡Ò»ĞĞÄÚÈİ£¬»»ĞĞ·û¿ÉÒÔÎª'\r', '\n'»ò'\r\n'. Èç¹û¶ÁÈ¡µ½ÉÏÊöÈı
+* ¸öÖ®Ò»£¬Í³Ò»Éè¶¨Îª'\n'£¬×îºóÓÃnull×Ö·û½áÎ². Èç¹ûÃ»ÓĞ¼ì²âµ½»»ĞĞ·û£¬
+* ×Ö·û´®ÒÔnull½áÎ²
+*/
 /**********************************************************************/
 int get_line(int sock, char *buf, int size)
 {
-    int i = 0;
-    char c = '\0';
-    int n;
+	int i = 0;
+	char c = '\0';
+	int n;
 
-    while ((i < size - 1) && (c != '\n')) {
-        n = recv(sock, &c, 1, 0);
-        /* DEBUG printf("%02X\n", c); */
-        if (n > 0) {
-            // å¦‚æœæœ«å°¾æ˜¯\ræˆ–\r\nç»„åˆï¼Œè®¾ä¸º\n
-            if (c == '\r') {
-                // MSG_PEEKé€‰é¡¹ä½¿å¾—ä¸‹ä¸€æ¬¡ä¾ç„¶å¯ä»¥è¯»å–è¿™ä¸ªå­—ç¬¦
-                n = recv(sock, &c, 1, MSG_PEEK);
-                /* DEBUG printf("%02X\n", c); */
-                if ((n > 0) && (c == '\n'))
-                    recv(sock, &c, 1, 0);
-                else
-                    c = '\n';
-            }
-            buf[i] = c;
-            i++;
-        } else { // å¦‚æœæ²¡æœ‰å¯è¯»çš„ï¼Œå°†cè®¾ç½®ä¸º\nä»¥ç»ˆæ­¢å¾ªç¯
-            c = '\n';
-        }
-    }
-    buf[i] = '\0';
+	while ((i < size - 1) && (c != '\n'))
+	{
+		n = recv(sock, &c, 1, 0);
+		/* DEBUG printf("%02X\n", c); */
+		if (n > 0)
+		{
+			// Èç¹ûÄ©Î²ÊÇ\r»ò\r\n×éºÏ£¬ÉèÎª\n
+			if (c == '\r')
+			{
+				// MSG_PEEKÑ¡ÏîÊ¹µÃÏÂÒ»´ÎÒÀÈ»¿ÉÒÔ¶ÁÈ¡Õâ¸ö×Ö·û
+				n = recv(sock, &c, 1, MSG_PEEK);
+				/* DEBUG printf("%02X\n", c); */
+				if ((n > 0) && (c == '\n'))
+					recv(sock, &c, 1, 0);
+				else
+					c = '\n';
+			}
+			buf[i] = c;
+			i++;
+		}
+		else     // Èç¹ûÃ»ÓĞ¿É¶ÁµÄ£¬½«cÉèÖÃÎª\nÒÔÖÕÖ¹Ñ­»·
+		{
+			c = '\n';
+		}
+	}
+	buf[i] = '\0';
 
-    return i;
+	return i;
+}
+
+void options(int client)
+{
+	time_t now;
+	char buf[1024];
+	char buf1[1024] = {0};
+	char timebuf[100] = {0};
+
+	const char* rfc1123_fmt = "%a, %d %b %Y %H:%M:%S GMT";
+
+	strcpy(buf, "HTTP/1.0 200 OK\r\n");
+	sprintf(buf1, "%s%s", buf1, buf);
+
+	sprintf(buf, "Allow: GET, HEAD, POST,OPTIONS\r\n");
+	sprintf(buf1, "%s%s", buf1, buf);
+
+	strcpy(buf, SERVER_STRING);
+	sprintf(buf1, "%s%s", buf1, buf);
+
+	sprintf(buf, "Public: GET, HEAD, POST,OPTIONS\r\n");
+	sprintf(buf1, "%s%s", buf1, buf);
+
+	now = time( (time_t*) 0 );
+	(void) strftime( timebuf, sizeof(timebuf), rfc1123_fmt, gmtime( &now ));
+	snprintf( buf, sizeof(buf), "Date: %s\015\012", timebuf );
+	sprintf(buf1, "%s%s", buf1, buf);
+
+	sprintf(buf, "Content-Length: 0\r\n");
+	sprintf(buf1, "%s%s", buf1, buf);
+
+	strcpy(buf, "\r\n");
+	sprintf(buf1, "%s%s", buf1, buf);
+	send(client, buf1, strlen(buf1), 0);
+
+	memset(buf1, 0, sizeof(buf1));
+	memset(buf, 0, sizeof(buf));
 }
 
 /**********************************************************************/
 /* Return the informational HTTP headers about a file. */
 /* Parameters: the socket to print the headers on
  *             the name of the file */
- // è¿”å›æ–‡ä»¶çš„http header
+// ·µ»ØÎÄ¼şµÄhttp header
 /**********************************************************************/
 void headers(int client, const char *filename)
 {
-    char buf[1024];
-    (void)filename;  /* could use filename to determine file type */
+	char buf[1024] = {0};
+	char buf1[1024] = {0};
+	char timebuf[100] = {0};
+	time_t now;
+	(void)filename;  /* could use filename to determine file type */
+	const char* rfc1123_fmt = "%a, %d %b %Y %H:%M:%S GMT";
 
-    strcpy(buf, "HTTP/1.0 200 OK\r\n");
-    send(client, buf, strlen(buf), 0);
-    strcpy(buf, SERVER_STRING);
-    send(client, buf, strlen(buf), 0);
-    sprintf(buf, "Content-Type: text/html\r\n");
-    send(client, buf, strlen(buf), 0);
-    strcpy(buf, "\r\n");
-    send(client, buf, strlen(buf), 0);
+	strcpy(buf, "HTTP/1.0 200 OK\r\n");/** Ö»ÊÇ\r\n ½áÎ²*/
+	send(client, buf, strlen(buf), 0);
+
+	strcpy(buf, SERVER_STRING);
+	sprintf(buf1, "%s%s", buf1, buf);
+
+	now = time( (time_t*) 0 );
+	(void) strftime( timebuf, sizeof(timebuf), rfc1123_fmt, gmtime( &now ));
+	snprintf( buf, sizeof(buf), "Date: %s\015\012", timebuf );
+	sprintf(buf1, "%s%s", buf1, buf);
+
+	snprintf( buf, sizeof(buf), "Cache-Control: no-cache,no-store\r\n" );
+	sprintf(buf1, "%s%s", buf1, buf);
+
+	snprintf( buf, sizeof(buf), "Content-Encoding: %s\r\n", "gz" );
+	sprintf(buf1, "%s%s", buf1, buf);
+
+	struct stat sb;
+	stat( filename, &sb );
+	snprintf(buf, sizeof(buf), "Content-Length: %lld\r\n", (int64_t) sb.st_size );
+	sprintf(buf1, "%s%s", buf1, buf);
+
+	sprintf(buf, "Content-Type: text/html\r\n");
+	sprintf(buf1, "%s%s", buf1, buf);
+
+	snprintf( buf, sizeof(buf), "Connection: close\r\n" );
+	sprintf(buf1, "%s%s", buf1, buf);
+
+	strftime(timebuf, sizeof(timebuf), rfc1123_fmt, gmtime(&sb.st_mtime ) );
+	snprintf( buf, sizeof(buf), "Last-Modified: %s\r\n\r\n", timebuf );
+
+	sprintf(buf1, "%s%s", buf1, buf);
+	send(client, buf1, strlen(buf1), 0);
+
+	strcpy(buf, "\r\n");
+	sprintf(buf1, "%s%s", buf1, buf);
+
+	memset(buf1, 0, sizeof(buf1));
+	memset(buf, 0, sizeof(buf));
 }
 
 /**********************************************************************/
 /* Give a client a 404 not found status message. */
-// ç†Ÿæ‚‰çš„ 404 not found :)
+// ÊìÏ¤µÄ 404 not found :)
 /**********************************************************************/
 void not_found(int client)
 {
-    char buf[1024];
+	char buf[1024];
 
-    sprintf(buf, "HTTP/1.0 404 NOT FOUND\r\n");
-    send(client, buf, strlen(buf), 0);
-    sprintf(buf, SERVER_STRING);
-    send(client, buf, strlen(buf), 0);
-    sprintf(buf, "Content-Type: text/html\r\n");
-    send(client, buf, strlen(buf), 0);
-    sprintf(buf, "\r\n");
-    send(client, buf, strlen(buf), 0);
-    sprintf(buf, "<HTML><TITLE>Not Found</TITLE>\r\n");
-    send(client, buf, strlen(buf), 0);
-    sprintf(buf, "<BODY><P>The server could not fulfill\r\n");
-    send(client, buf, strlen(buf), 0);
-    sprintf(buf, "your request because the resource specified\r\n");
-    send(client, buf, strlen(buf), 0);
-    sprintf(buf, "is unavailable or nonexistent.\r\n");
-    send(client, buf, strlen(buf), 0);
-    sprintf(buf, "</BODY></HTML>\r\n");
-    send(client, buf, strlen(buf), 0);
+	sprintf(buf, "HTTP/1.0 404 NOT FOUND\r\n");
+	send(client, buf, strlen(buf), 0);
+	sprintf(buf, SERVER_STRING);
+	send(client, buf, strlen(buf), 0);
+	sprintf(buf, "Content-Type: text/html\r\n");
+	send(client, buf, strlen(buf), 0);
+	sprintf(buf, "\r\n");
+	send(client, buf, strlen(buf), 0);
+	sprintf(buf, "<HTML><TITLE>Not Found</TITLE>\r\n");
+	send(client, buf, strlen(buf), 0);
+	sprintf(buf, "<BODY><P>The server could not fulfill\r\n");
+	send(client, buf, strlen(buf), 0);
+	sprintf(buf, "your request because the resource specified\r\n");
+	send(client, buf, strlen(buf), 0);
+	sprintf(buf, "is unavailable or nonexistent.\r\n");
+	send(client, buf, strlen(buf), 0);
+	sprintf(buf, "</BODY></HTML>\r\n");
+	send(client, buf, strlen(buf), 0);
 }
 
 /**********************************************************************/
@@ -433,28 +563,29 @@ void not_found(int client)
  * Parameters: a pointer to a file structure produced from the socket
  *              file descriptor
  *             the name of the file to serve */
- // å°†æ–‡ä»¶ä¼ é€ç»™client
+// ½«ÎÄ¼ş´«ËÍ¸øclient
 /**********************************************************************/
 void serve_file(int client, const char *filename)
 {
-    FILE *resource = NULL;
-    int numchars = 1;
-    char buf[1024];
+	FILE *resource = NULL;
+	int numchars = 1;
+	char buf[1024];
 
-    buf[0] = 'A';
-    buf[1] = '\0';
-    while ((numchars > 0) && strcmp("\n", buf))  /* read & discard headers */
-        numchars = get_line(client, buf, sizeof(buf));
+	buf[0] = 'A';
+	buf[1] = '\0';
+	while ((numchars > 0) && strcmp("\n", buf))  /* read & discard headers */
+		numchars = get_line(client, buf, sizeof(buf));
 
-    resource = fopen(filename, "r");
-    if (resource == NULL)
-        not_found(client);
-    else {
-        // å°† header å’Œæ–‡ä»¶å†…å®¹ä¼ é€ç»™ client
-        headers(client, filename); 
-        cat(client, resource);
-    }
-    fclose(resource);
+	resource = fopen(filename, "r");
+	if (resource == NULL)
+		not_found(client);
+	else
+	{
+		// ½« header ºÍÎÄ¼şÄÚÈİ´«ËÍ¸ø client
+		headers(client, filename);
+		cat(client, resource);
+	}
+	fclose(resource);
 }
 
 /**********************************************************************/
@@ -464,87 +595,98 @@ void serve_file(int client, const char *filename)
  * port.
  * Parameters: pointer to variable containing the port to connect on
  * Returns: the socket */
- // åˆ›å»ºä¸€ä¸ªç›‘å¬å¥—æ¥å­—ï¼Œç­‰å¾…å®¢æˆ·çš„è¯·æ±‚
+// ´´½¨Ò»¸ö¼àÌıÌ×½Ó×Ö£¬µÈ´ı¿Í»§µÄÇëÇó
 /**********************************************************************/
 int startup(u_short *port)
 {
-    int httpd = 0;
-    struct sockaddr_in name;
+	int httpd = 0;
+	struct sockaddr_in name;
 
-    httpd = socket(PF_INET, SOCK_STREAM, 0);
-    if (httpd == -1)
-        error_die("socket");
-    memset(&name, 0, sizeof(name));
-    name.sin_family = AF_INET;
-    name.sin_port = htons(*port);
-    name.sin_addr.s_addr = htonl(INADDR_ANY); // INADDR_ANY: è¡¨ç¤ºä»»æ„åœ°å€, see IP(7)
-    if (bind(httpd, (struct sockaddr *)&name, sizeof(name)) < 0)
-        error_die("bind");
-    /* if dynamically allocating a port */
-    if (*port == 0) {
-        socklen_t namelen = sizeof(name);
-        if (getsockname(httpd, (struct sockaddr *)&name, &namelen) == -1)
-            error_die("getsockname");
-        *port = ntohs(name.sin_port);
-    }
-    if (listen(httpd, 5) < 0) // queue size if 5
-        error_die("listen");
+	httpd = socket(PF_INET, SOCK_STREAM, 0);
+	if (httpd == -1)
+		error_die("socket");
+	memset(&name, 0, sizeof(name));
+	name.sin_family = AF_INET;
+	name.sin_port = htons(11000);
+	name.sin_addr.s_addr = htonl(INADDR_ANY); // INADDR_ANY: ±íÊ¾ÈÎÒâµØÖ·, see IP(7)
+	if (bind(httpd, (struct sockaddr *)&name, sizeof(name)) < 0)
+		error_die("bind");
+	/* if dynamically allocating a port */
+	if (*port == 0)
+	{
+		socklen_t namelen = sizeof(name);
+		if (getsockname(httpd, (struct sockaddr *)&name, &namelen) == -1)
+			error_die("getsockname");
+		*port = ntohs(name.sin_port);
+	}
+	if (listen(httpd, 5) < 0) // queue size if 5
+		error_die("listen");
 
-    return httpd;
+	return httpd;
 }
 
 /**********************************************************************/
 /* Inform the client that the requested web method has not been
  * implemented.
  * Parameter: the client socket */
- // å®¢æˆ·çš„è¯·æ±‚æ²¡æœ‰å®ç°
+// ¿Í»§µÄÇëÇóÃ»ÓĞÊµÏÖ
 /**********************************************************************/
 void unimplemented(int client)
 {
-    char buf[1024];
+	char buf[1024];
 
-    sprintf(buf, "HTTP/1.0 501 Method Not Implemented\r\n");
-    send(client, buf, strlen(buf), 0);
-    sprintf(buf, SERVER_STRING);
-    send(client, buf, strlen(buf), 0);
-    sprintf(buf, "Content-Type: text/html\r\n");
-    send(client, buf, strlen(buf), 0);
-    sprintf(buf, "\r\n");
-    send(client, buf, strlen(buf), 0);
-    sprintf(buf, "<HTML><HEAD><TITLE>Method Not Implemented\r\n");
-    send(client, buf, strlen(buf), 0);
-    sprintf(buf, "</TITLE></HEAD>\r\n");
-    send(client, buf, strlen(buf), 0);
-    sprintf(buf, "<BODY><P>HTTP request method not supported.\r\n");
-    send(client, buf, strlen(buf), 0);
-    sprintf(buf, "</BODY></HTML>\r\n");
-    send(client, buf, strlen(buf), 0);
+	sprintf(buf, "HTTP/1.0 501 Method Not Implemented\r\n");
+	send(client, buf, strlen(buf), 0);
+	sprintf(buf, SERVER_STRING);
+	send(client, buf, strlen(buf), 0);
+	sprintf(buf, "Content-Type: text/html\r\n");
+	send(client, buf, strlen(buf), 0);
+	sprintf(buf, "\r\n");
+	send(client, buf, strlen(buf), 0);
+	sprintf(buf, "<HTML><HEAD><TITLE>Method Not Implemented\r\n");
+	send(client, buf, strlen(buf), 0);
+	sprintf(buf, "</TITLE></HEAD>\r\n");
+	send(client, buf, strlen(buf), 0);
+	sprintf(buf, "<BODY><P>HTTP request method not supported.\r\n");
+	send(client, buf, strlen(buf), 0);
+	sprintf(buf, "</BODY></HTML>\r\n");
+	send(client, buf, strlen(buf), 0);
 }
 
 /**********************************************************************/
 
 int main(void)
 {
-    int server_sock = -1;
-    u_short port = 0;
-    int client_sock = -1;
-    struct sockaddr_in client_name;
-    socklen_t client_name_len = sizeof(client_name);
+	int server_sock = -1;
+	u_short port = 0;
+	int client_sock = -1;
+	struct sockaddr_in client_name;
+	socklen_t client_name_len = sizeof(client_name);
 
-    server_sock = startup(&port); // å»ºç«‹ä¸€ä¸ªç›‘å¬å¥—æ¥å­—
-    printf("httpd running on port %d\n", port);
+	server_sock = startup(&port); // ½¨Á¢Ò»¸ö¼àÌıÌ×½Ó×Ö
+	printf("\033[34m\nhttpd running on port \033[33m%d\033[0m\n", port);
+	fprintf(stdout, "\nPress Ctrl+C To Terminate.\n");
+	while (1)
+	{
+		// ·µ»ØÒ»¸öÒÑÁ¬½ÓÌ×½Ó×Ö
+		client_sock = accept(server_sock,
+		                     (struct sockaddr *)&client_name,
+		                     &client_name_len);
+		if (client_sock == -1)
+			error_die("accept");
+		accept_request(client_sock); // ´¦ÀíÇëÇó
+	}
 
-    while (1) {
-        // è¿”å›ä¸€ä¸ªå·²è¿æ¥å¥—æ¥å­—
-        client_sock = accept(server_sock,
-                (struct sockaddr *)&client_name,
-                &client_name_len);
-        if (client_sock == -1)
-            error_die("accept");
-        accept_request(client_sock); // å¤„ç†è¯·æ±‚
-    }
+	close(server_sock);
 
-    close(server_sock);
-
-    return 0;
+	return 0;
 }
+
+
+
+
+
+
+
+
+
